@@ -1,0 +1,14 @@
+langchain-core
+langchain-community
+langchain-huggingface
+langchain-google-genai
+langgraph
+faiss-cpu
+rank-bm25
+konlpy
+requests
+python-dotenv
+wikipedia-api==0.6.0
+fastapi
+uvicorn[standard]
+pydantic
