@@ -153,6 +153,11 @@ rain-research-bot/
 # 의존성 설치
 pip install -r requirements.txt
 
+# .env 파일 생성 (저장소 루트에, 아래 값 채워넣기)
+GOOGLE_API_KEY=발급받은_Gemini_API_키
+NAVER_CLIENT_ID=발급받은_네이버_Client_ID
+NAVER_CLIENT_SECRET=발급받은_네이버_Client_Secret
+
 # 1. 최초 1회: IT 인덱스 구축
 python3 scripts/collect_wiki.py
 python3 scripts/clean_wiki_docs.py
