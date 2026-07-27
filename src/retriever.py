@@ -1,13 +1,14 @@
 """
-retriever.py - 하이브리드 검색기 (FAISS + BM25/Mecab), 직접 구현 버전
+retriever.py - 하이브리드 검색기 (FAISS + BM25/Mecab) + Reranking
 
-이전 버전은 LangChain의 EnsembleRetriever(라이브러리)로 FAISS와 BM25를
-합쳤지만, 이 버전은 그 결합 로직을 직접 구현했다.
+검색 흐름:
+  1차: FAISS + BM25 하이브리드로 후보 10개를 넉넉하게 뽑음
+  2차: Cross-encoder(bge-reranker-v2-m3)로 "질문-문서" 쌍을 재채점
+  3차: 재채점 상위 3개만 최종 반환
 
-[rain-research-bot 전용 추가사항]
-1차 검색(기본 threshold) 결과가 0개면, threshold를 완화해서 1번 더 시도한다.
-(07의 원본 retriever.py에는 없던 로직 - IT 위키 인덱스에서 "인공지능"처럼
- threshold 경계선에 걸리는 질문이 발견되어 추가함)
+리랭킹을 추가한 이유:
+  평가 결과 context_precision이 0.33으로 낮았음 (검색된 3개 중 1개만 관련 있었음).
+  1차 검색에서 인접 분야 문서가 섞여 들어오는 문제를 2차 재채점으로 걸러내기 위함.
 """
 import logging
 import warnings
@@ -20,6 +21,7 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.runnables import RunnableLambda
 from rank_bm25 import BM25Okapi
 from konlpy.tag import Mecab
+from sentence_transformers import CrossEncoder
 
 MECAB_DICPATH = "/opt/homebrew/lib/mecab/dic/mecab-ko-dic"
 
@@ -27,20 +29,22 @@ MECAB_DICPATH = "/opt/homebrew/lib/mecab/dic/mecab-ko-dic"
 def load_hybrid_retriever(
     faiss_path,
     embedding_model="BAAI/bge-m3",
+    reranker_model="BAAI/bge-reranker-v2-m3",
     k=3,
+    initial_k=10,
     device="cpu",
     score_threshold=0.5,
     alpha=0.5,
     bm25_min_score=12.0,
-    relaxed_score_threshold=0.3,   # [추가] 재시도용 완화 기준 (벡터)
-    relaxed_bm25_min_score=6.0,    # [추가] 재시도용 완화 기준 (BM25)
+    relaxed_score_threshold=0.3,
+    relaxed_bm25_min_score=6.0,
+    use_reranker=True,
 ):
     """
-    FAISS(의미 기반) + BM25(Mecab 형태소 분석 기반 키워드 검색)를 직접
-    결합한 하이브리드 retriever를 생성한다.
+    FAISS + BM25 하이브리드 검색 + Cross-encoder 리랭킹.
 
-    1차 검색이 0개면, threshold를 완화해서 2차 검색을 자동으로 1번 더 시도한다.
-    (그래도 0개면 최종적으로 빈 리스트 반환 - "진짜 관련 없다"는 뜻으로 봄)
+    use_reranker=True:  1차로 initial_k(10)개 뽑고, 리랭커로 재채점 후 상위 k(3)개 반환
+    use_reranker=False: 기존 방식 그대로 (리랭킹 전 베이스라인과 비교할 때 사용)
     """
     print("임베딩 모델 로드 중...")
     embeddings = HuggingFaceEmbeddings(
@@ -68,8 +72,13 @@ def load_hybrid_retriever(
     bm25 = BM25Okapi(tokenized_corpus)
     print("BM25 인덱스 구축 완료")
 
-    def _search_once(question: str, vec_threshold: float, bm25_threshold: float):
-        """threshold 값을 받아서 검색 1회 수행 (내부 헬퍼 함수)"""
+    reranker = None
+    if use_reranker:
+        print(f"리랭커 로드 중... ({reranker_model})")
+        reranker = CrossEncoder(reranker_model)
+        print("리랭커 로드 완료")
+
+    def _search_once(question, vec_threshold, bm25_threshold, num_results):
         vec_results = vectorstore.similarity_search_with_relevance_scores(
             question, k=len(all_docs)
         )
@@ -96,16 +105,28 @@ def load_hybrid_retriever(
             for idx in candidate_ids
         }
 
-        top_ids = sorted(combined, key=combined.get, reverse=True)[:k]
+        top_ids = sorted(combined, key=combined.get, reverse=True)[:num_results]
         return [all_docs[i] for i in top_ids]
 
-    def retrieve(question: str):
-        # ---- 1차 검색: 기본(엄격한) threshold ----
-        results = _search_once(question, score_threshold, bm25_min_score)
+    def _rerank(question, docs):
+        if not docs:
+            return []
+        pairs = [[question, doc.page_content] for doc in docs]
+        scores = reranker.predict(pairs)
+        ranked = sorted(zip(docs, scores), key=lambda x: x[1], reverse=True)
+        filtered = [(doc, score) for doc, score in ranked if score > 0.01]
+        return [doc for doc, score in filtered[:k]]
 
-        # ---- [추가] 0개면, threshold 완화해서 2차 검색 1번 더 시도 ----
+    def retrieve(question):
+        search_k = initial_k if use_reranker else k
+
+        results = _search_once(question, score_threshold, bm25_min_score, search_k)
+
         if not results:
-            results = _search_once(question, relaxed_score_threshold, relaxed_bm25_min_score)
+            results = _search_once(question, relaxed_score_threshold, relaxed_bm25_min_score, search_k)
+
+        if use_reranker and results:
+            results = _rerank(question, results)
 
         return results
 
@@ -116,12 +137,18 @@ load_retriever = load_hybrid_retriever
 
 
 if __name__ == "__main__":
-    retriever = load_hybrid_retriever("faiss_index_it")
+    import sys
+    import os
+    _DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+    FAISS_PATH = os.path.join(_DATA_DIR, "faiss_index_it")
+
+    retriever = load_hybrid_retriever(FAISS_PATH)
 
     test_questions = [
         "인공지능이 뭐야?",
-        "오늘 날씨에 대해 알려줘",
+        "딥러닝과 머신러닝의 차이는?",
         "클라우드 컴퓨팅의 장점은?",
+        "오늘 점심 뭐 먹지?",
     ]
     for q in test_questions:
         results = retriever.invoke(q)
