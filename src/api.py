@@ -1,19 +1,26 @@
 """
-[src/api.py] (기존 main.py)
+[src/api.py]
 
-agent.py의 Agent를 FastAPI로 감싸서 REST API로 배포한다.
+agent.py의 Agent를 FastAPI로 감싸서 REST API + 웹 채팅 UI로 배포한다.
 실행: python3 src/api.py (저장소 루트에서)
-Swagger 테스트: http://localhost:8003/docs
+채팅 UI: http://localhost:8003
+Swagger: http://localhost:8003/docs
 """
+import os
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage
 
 from agent import graph
 
 app = FastAPI(title="rain-research-bot")
+
+# 정적 파일 (채팅 UI) 서빙
+_STATIC_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
 
 
 class AskRequest(BaseModel):
@@ -24,6 +31,12 @@ class AskRequest(BaseModel):
 class AskResponse(BaseModel):
     answer: str
     tool_used: Optional[str] = None
+
+
+@app.get("/")
+def serve_ui():
+    """채팅 UI 페이지 반환"""
+    return FileResponse(os.path.join(_STATIC_DIR, "index.html"))
 
 
 @app.get("/health")

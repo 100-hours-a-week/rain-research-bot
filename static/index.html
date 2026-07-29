@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>rain-research-bot</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Outfit', -apple-system, sans-serif;
+            background: #f7f8fa;
+            color: #1a1a2e;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        header {
+            height: 56px;
+            display: flex;
+            align-items: center;
+            padding: 0 28px;
+            background: #fff;
+            border-bottom: 1px solid rgba(0,0,0,0.06);
+            flex-shrink: 0;
+            gap: 10px;
+        }
+
+        .header-dot {
+            width: 8px;
+            height: 8px;
+            background: #0ea5e9;
+            border-radius: 50%;
+            box-shadow: 0 0 0 3px rgba(14,165,233,0.15);
+        }
+
+        header h1 {
+            font-size: 15px;
+            font-weight: 500;
+            color: #1a1a2e;
+        }
+
+        header h1 em {
+            font-style: normal;
+            font-weight: 600;
+            color: #0ea5e9;
+        }
+
+        .chat-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 32px 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .chat-area::-webkit-scrollbar { width: 4px; }
+        .chat-area::-webkit-scrollbar-thumb { background: #ddd; border-radius: 2px; }
+
+        .message {
+            max-width: 640px;
+            width: 100%;
+            margin: 0 auto;
+            animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .message.user { display: flex; justify-content: flex-end; }
+
+        .message.user .bubble {
+            background: #0ea5e9;
+            color: #fff;
+            border-radius: 20px 20px 6px 20px;
+            padding: 13px 20px;
+            max-width: 70%;
+            font-size: 14.5px;
+            line-height: 1.55;
+            font-weight: 400;
+        }
+
+        .message.bot .header-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .bot-icon {
+            width: 28px;
+            height: 28px;
+            background: #0ea5e9;
+            border-radius: 9px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 13px;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+
+        .bot-name {
+            font-size: 13px;
+            font-weight: 500;
+            color: #71717a;
+        }
+
+        .tool-chip {
+            margin-left: auto;
+            font-size: 11px;
+            font-weight: 500;
+            padding: 3px 10px;
+            border-radius: 20px;
+        }
+
+        .tool-chip.wiki {
+            color: #0d9488;
+            background: #f0fdfa;
+            border: 1px solid #99f6e4;
+        }
+
+        .tool-chip.news {
+            color: #0369a1;
+            background: #e0f2fe;
+            border: 1px solid #7dd3fc;
+        }
+
+        .message.bot .bubble {
+            background: #fff;
+            border: 1px solid rgba(0,0,0,0.06);
+            border-radius: 6px 20px 20px 20px;
+            padding: 18px 22px;
+            font-size: 14.5px;
+            line-height: 1.8;
+            color: #374151;
+            white-space: pre-wrap;
+            font-weight: 300;
+            margin-left: 36px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+        }
+
+        .loading-wrap {
+            margin-left: 36px;
+            display: flex;
+            gap: 5px;
+            padding: 16px 0;
+        }
+
+        .loading-wrap span {
+            width: 5px;
+            height: 5px;
+            background: #0ea5e9;
+            border-radius: 50%;
+            animation: bounce 1.4s ease-in-out infinite;
+        }
+        .loading-wrap span:nth-child(2) { animation-delay: 0.16s; }
+        .loading-wrap span:nth-child(3) { animation-delay: 0.32s; }
+
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0.5); opacity: 0.3; }
+            40% { transform: scale(1); opacity: 1; }
+        }
+
+        .welcome {
+            margin: auto;
+            text-align: center;
+            max-width: 460px;
+            padding: 0 20px;
+        }
+
+        .welcome-visual {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 24px;
+            background: #0ea5e9;
+            border-radius: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 28px;
+            font-weight: 600;
+            box-shadow: 0 8px 32px rgba(14, 165, 233, 0.2);
+            transform: rotate(-6deg);
+        }
+
+        .welcome h2 {
+            font-size: 26px;
+            font-weight: 600;
+            color: #1a1a2e;
+            margin-bottom: 6px;
+            letter-spacing: -0.03em;
+        }
+
+        .welcome h2 span {
+            color: #0ea5e9;
+        }
+
+        .welcome .desc {
+            font-size: 14px;
+            color: #a1a1aa;
+            line-height: 1.6;
+            margin-bottom: 36px;
+            font-weight: 400;
+        }
+
+        .capability-row {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 28px;
+        }
+
+        .capability {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            font-weight: 500;
+            padding: 6px 14px;
+            border-radius: 20px;
+        }
+
+        .cap-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+        }
+
+        .capability.wiki {
+            color: #0d9488;
+            background: #f0fdfa;
+            border: 1px solid #99f6e4;
+        }
+        .capability.wiki .cap-dot { background: #0d9488; }
+
+        .capability.news {
+            color: #0369a1;
+            background: #e0f2fe;
+            border: 1px solid #7dd3fc;
+        }
+        .capability.news .cap-dot { background: #0369a1; }
+
+        .example-group {
+            margin-bottom: 16px;
+            text-align: left;
+        }
+
+        .group-label {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+            margin-bottom: 8px;
+            padding-left: 2px;
+        }
+
+        .group-label.wiki-label { color: #0d9488; }
+        .group-label.news-label { color: #0369a1; }
+
+        .group-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .group-buttons button {
+            width: 100%;
+            text-align: left;
+            padding: 13px 16px;
+            background: #fff;
+            border: 1px solid rgba(0,0,0,0.07);
+            border-radius: 12px;
+            font-size: 13px;
+            font-family: inherit;
+            font-weight: 400;
+            color: #52525b;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .group-buttons button.wiki-btn:hover {
+            border-color: #0d9488;
+            background: #f0fdfa;
+            color: #0d9488;
+        }
+
+        .group-buttons button.news-btn:hover {
+            border-color: #0369a1;
+            background: #e0f2fe;
+            color: #0369a1;
+        }
+
+        .example-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .example-grid button {
+            padding: 16px 14px;
+            background: #fff;
+            border: 1px solid rgba(0,0,0,0.07);
+            border-radius: 14px;
+            font-size: 13px;
+            font-family: inherit;
+            font-weight: 400;
+            color: #52525b;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: left;
+            line-height: 1.4;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+        }
+
+        .example-grid button:hover {
+            border-color: #0ea5e9;
+            box-shadow: 0 4px 16px rgba(14, 165, 233, 0.08);
+            transform: translateY(-1px);
+        }
+
+        .example-grid button .emoji {
+            font-size: 20px;
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        .input-area {
+            padding: 12px 20px 28px;
+            flex-shrink: 0;
+        }
+
+        .input-container {
+            max-width: 640px;
+            margin: 0 auto;
+        }
+
+        .input-box {
+            display: flex;
+            align-items: center;
+            background: #fff;
+            border: 1px solid rgba(0,0,0,0.1);
+            border-radius: 16px;
+            padding: 6px 6px 6px 20px;
+            transition: all 0.2s;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+        }
+
+        .input-box:focus-within {
+            border-color: #0ea5e9;
+            box-shadow: 0 2px 20px rgba(14, 165, 233, 0.1);
+        }
+
+        .input-box input {
+            flex: 1;
+            border: none;
+            background: transparent;
+            color: #1a1a2e;
+            font-size: 14.5px;
+            font-family: inherit;
+            font-weight: 400;
+            outline: none;
+        }
+
+        .input-box input::placeholder { color: #c4c4cc; }
+
+        .send-btn {
+            width: 42px;
+            height: 42px;
+            border-radius: 12px;
+            border: none;
+            background: #0ea5e9;
+            color: #fff;
+            font-size: 18px;
+            cursor: pointer;
+            transition: all 0.15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            box-shadow: 0 2px 8px rgba(14, 165, 233, 0.25);
+        }
+
+        .send-btn:hover { transform: scale(1.04); box-shadow: 0 4px 16px rgba(14, 165, 233, 0.3); }
+        .send-btn:disabled { background: #e4e4e7; color: #a1a1aa; box-shadow: none; transform: none; cursor: not-allowed; }
+
+        .footer-info {
+            text-align: center;
+            font-size: 11px;
+            color: #d4d4d8;
+            margin-top: 10px;
+            font-weight: 400;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="header-dot"></div>
+        <h1><em>rain</em> research-bot</h1>
+    </header>
+
+    <div class="chat-area" id="chatArea">
+        <div class="welcome" id="welcome">
+            <div class="welcome-visual">R</div>
+            <h2>무엇이든 물어보세요</h2>
+
+            <div class="capability-row">
+                <div class="capability wiki">
+                    <span class="cap-dot"></span>IT 개념 검색
+                </div>
+                <div class="capability news">
+                    <span class="cap-dot"></span>실시간 뉴스 검색
+                </div>
+            </div>
+
+            <div class="example-group">
+                <div class="group-label wiki-label">IT 개념</div>
+                <div class="group-buttons">
+                    <button class="wiki-btn" onclick="sendExample('인공지능이 뭐야?')">인공지능이 뭐야?</button>
+                    <button class="wiki-btn" onclick="sendExample('블록체인은 어떻게 작동해?')">블록체인 작동 원리</button>
+                </div>
+            </div>
+
+            <div class="example-group">
+                <div class="group-label news-label">실시간 뉴스</div>
+                <div class="group-buttons">
+                    <button class="news-btn" onclick="sendExample('오늘 삼성전자 뉴스 알려줘')">삼성전자 최신 뉴스</button>
+                    <button class="news-btn" onclick="sendExample('SK하이닉스 최근 소식은?')">SK하이닉스 최근 소식</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="input-area">
+        <div class="input-container">
+            <div class="input-box">
+                <input type="text" id="questionInput" placeholder="무엇이든 물어보세요..."
+                       onkeydown="if(event.key==='Enter'&&!event.isComposing) sendMessage()">
+                <button class="send-btn" id="sendBtn" onclick="sendMessage()">↑</button>
+            </div>
+            <div class="footer-info">Gemini 2.5 Flash · FAISS + BM25 Hybrid · Naver News API</div>
+        </div>
+    </div>
+
+    <script>
+        const chatArea = document.getElementById('chatArea');
+        const questionInput = document.getElementById('questionInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const welcome = document.getElementById('welcome');
+        const threadId = 'session-' + Date.now();
+
+        function sendExample(text) {
+            questionInput.value = text;
+            sendMessage();
+        }
+
+        async function sendMessage() {
+            const question = questionInput.value.trim();
+            if (!question) return;
+            if (welcome) welcome.remove();
+            addMessage(question, 'user');
+            questionInput.value = '';
+            sendBtn.disabled = true;
+            const loadingEl = addLoading();
+            try {
+                const res = await fetch('/ask', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question, thread_id: threadId })
+                });
+                const data = await res.json();
+                loadingEl.remove();
+                if (res.ok) addMessage(data.answer, 'bot', data.tool_used);
+                else addMessage('요청 처리 중 오류가 발생했습니다.', 'bot');
+            } catch (e) {
+                loadingEl.remove();
+                addMessage('서버에 연결할 수 없습니다.', 'bot');
+            }
+            sendBtn.disabled = false;
+            questionInput.focus();
+        }
+
+        function addMessage(text, role, toolUsed) {
+            const div = document.createElement('div');
+            div.className = 'message ' + role;
+            if (role === 'user') {
+                div.innerHTML = '<div class="bubble">' + esc(text) + '</div>';
+            } else {
+                let chip = '';
+                if (toolUsed) {
+                    const cls = toolUsed === 'search_it_wiki' ? 'wiki' : 'news';
+                    const label = toolUsed === 'search_it_wiki' ? 'IT 위키' : '실시간 뉴스';
+                    chip = '<span class="tool-chip ' + cls + '">' + label + '</span>';
+                }
+                div.innerHTML =
+                    '<div class="header-row"><div class="bot-icon">R</div><span class="bot-name">rain</span>' + chip + '</div>' +
+                    '<div class="bubble">' + esc(text) + '</div>';
+            }
+            chatArea.appendChild(div);
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        function addLoading() {
+            const div = document.createElement('div');
+            div.className = 'message bot';
+            div.innerHTML = '<div class="header-row"><div class="bot-icon">R</div><span class="bot-name">rain</span></div>' +
+                '<div class="loading-wrap"><span></span><span></span><span></span></div>';
+            chatArea.appendChild(div);
+            chatArea.scrollTop = chatArea.scrollHeight;
+            return div;
+        }
+
+        function esc(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+    </script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+# [docker-compose.yml]
+#
+# 실행: docker compose up --build
+# .env 파일(API 키)은 이미지 안에 안 넣고, 실행 시점에 주입한다 (보안).
+
+services:
+  rain-research-bot:
+    build: .
+    ports:
+      - "8003:8003"
+    env_file:
+      - .env
+    environment:
+      - MECAB_DICPATH=/usr/local/lib/mecab/dic/mecab-ko-dic
+    volumes:
+      # 임베딩/리랭커 모델(수 GB)을 컨테이너 밖에 캐싱.
+      # 없으면 컨테이너가 재시작될 때마다 모델을 처음부터 다시 받는다.
+      - hf-cache:/root/.cache/huggingface
+    # 디버깅 중에는 자동 재시작 끔 (에러 나면 한 번만 죽고 멈추도록)
+    restart: "no"
+
+volumes:
+  hf-cache:

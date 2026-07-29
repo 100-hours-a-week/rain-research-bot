@@ -1,14 +1,16 @@
 """
-retriever.py - 하이브리드 검색기 (FAISS + BM25/Mecab) + Reranking
+retriever.py - 하이브리드 검색기 (FAISS + BM25/Mecab) + Reranking + Query Expansion
 
-검색 흐름:
-  1차: FAISS + BM25 하이브리드로 후보 10개를 넉넉하게 뽑음
+검색 흐름 (v3 - 전체 적용 시):
+  0차: 쿼리 익스팬션 - Gemini가 질문을 여러 버전으로 바꿔서 검색 범위 확대
+  1차: FAISS + BM25 하이브리드로 각 버전별 후보를 넉넉하게 뽑고 합침
   2차: Cross-encoder(bge-reranker-v2-m3)로 "질문-문서" 쌍을 재채점
   3차: 재채점 상위 3개만 최종 반환
 
-리랭킹을 추가한 이유:
-  평가 결과 context_precision이 0.33으로 낮았음 (검색된 3개 중 1개만 관련 있었음).
-  1차 검색에서 인접 분야 문서가 섞여 들어오는 문제를 2차 재채점으로 걸러내기 위함.
+베이스라인 비교를 위해 플래그로 각 기능을 on/off 할 수 있음:
+  use_reranker=False, use_query_expansion=False -> v1 (baseline)
+  use_reranker=True,  use_query_expansion=False -> v2 (reranking only)
+  use_reranker=True,  use_query_expansion=True  -> v3 (reranking + query expansion)
 """
 import logging
 import warnings
@@ -23,7 +25,26 @@ from rank_bm25 import BM25Okapi
 from konlpy.tag import Mecab
 from sentence_transformers import CrossEncoder
 
-MECAB_DICPATH = "/opt/homebrew/lib/mecab/dic/mecab-ko-dic"
+import os
+
+# mecab-ko-dic 위치는 환경마다 다르므로, 후보를 순서대로 확인해서 실제 존재하는 경로를 씀
+_MECAB_DICPATH_CANDIDATES = [
+    os.environ.get("MECAB_DICPATH"),
+    os.environ.get("MECAB_DIC_PATH"),
+    "/usr/local/lib/mecab/dic/mecab-ko-dic",   # 리눅스: 소스 빌드 (Docker)
+    "/opt/homebrew/lib/mecab/dic/mecab-ko-dic",  # 맥: Homebrew
+    "/usr/lib/mecab/dic/mecab-ko-dic",         # 리눅스: apt 설치
+]
+
+
+def _resolve_mecab_dicpath():
+    for path in _MECAB_DICPATH_CANDIDATES:
+        if path and os.path.isdir(path):
+            return path
+    return None
+
+
+MECAB_DICPATH = _resolve_mecab_dicpath()
 
 
 def load_hybrid_retriever(
@@ -39,6 +60,7 @@ def load_hybrid_retriever(
     relaxed_score_threshold=0.3,
     relaxed_bm25_min_score=6.0,
     use_reranker=True,
+    use_query_expansion=False,   # v3: 쿼리 익스팬션 on/off
 ):
     """
     FAISS + BM25 하이브리드 검색 + Cross-encoder 리랭킹.
@@ -65,7 +87,7 @@ def load_hybrid_retriever(
         doc.metadata["_idx"] = i
     print(f"문서 {len(all_docs)}개 로드 완료")
 
-    mecab = Mecab(dicpath=MECAB_DICPATH)
+    mecab = Mecab(dicpath=MECAB_DICPATH) if MECAB_DICPATH else Mecab()
 
     print("BM25 인덱스 구축 중 (Mecab으로 명사 추출)...")
     tokenized_corpus = [mecab.nouns(doc.page_content) for doc in all_docs]
@@ -117,18 +139,53 @@ def load_hybrid_retriever(
         filtered = [(doc, score) for doc, score in ranked if score > 0.01]
         return [doc for doc, score in filtered[:k]]
 
+    def _expand_query(question):
+        """Gemini를 사용해 질문을 여러 버전으로 확장 (1번 호출로 3개 버전 생성)"""
+        from llm import build_llm
+        import json
+        expand_llm = build_llm()
+        prompt = f"""다음 질문을 검색 성능을 높이기 위해 3가지 다른 표현으로 바꿔주세요.
+원본 질문의 의미를 유지하면서, 다른 단어/관점으로 표현해주세요.
+JSON 배열로만 답하세요 (다른 텍스트 없이):
+["변형1", "변형2", "변형3"]
+
+질문: {question}"""
+        response = expand_llm.invoke(prompt)
+        text = response.content.strip().replace("```json", "").replace("```", "").strip()
+        try:
+            variants = json.loads(text)
+            return [question] + variants  # 원본 + 변형 3개 = 총 4개
+        except json.JSONDecodeError:
+            return [question]  # 파싱 실패하면 원본만 사용
+
     def retrieve(question):
         search_k = initial_k if use_reranker else k
 
-        results = _search_once(question, score_threshold, bm25_min_score, search_k)
+        # ---- 쿼리 익스팬션 ----
+        if use_query_expansion:
+            queries = _expand_query(question)
+            print(f"  쿼리 익스팬션: {queries}")
+        else:
+            queries = [question]
 
-        if not results:
-            results = _search_once(question, relaxed_score_threshold, relaxed_bm25_min_score, search_k)
+        # ---- 여러 쿼리로 검색해서 결과 합치기 ----
+        all_results = []
+        seen_ids = set()
+        for q in queries:
+            results = _search_once(q, score_threshold, bm25_min_score, search_k)
+            if not results:
+                results = _search_once(q, relaxed_score_threshold, relaxed_bm25_min_score, search_k)
+            for doc in results:
+                doc_id = doc.metadata.get("_idx")
+                if doc_id not in seen_ids:
+                    seen_ids.add(doc_id)
+                    all_results.append(doc)
 
-        if use_reranker and results:
-            results = _rerank(question, results)
+        # ---- 리랭킹 ----
+        if use_reranker and all_results:
+            all_results = _rerank(question, all_results)  # 원본 질문 기준으로 재채점
 
-        return results
+        return all_results[:k]
 
     return RunnableLambda(retrieve)
 

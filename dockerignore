@@ -1,0 +1,12 @@
+# .git, 캐시, 로컬 전용 파일은 이미지에 안 넣음
+.git
+.gitignore
+__pycache__
+*.pyc
+.DS_Store
+.env
+docs/
+tests/
+scripts/
+evaluation/
+*.md
